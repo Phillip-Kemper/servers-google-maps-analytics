@@ -1,15 +1,11 @@
 #!/usr/bin/env node
 
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import {
-  CallToolRequestSchema,
-  ListToolsRequestSchema,
-  Tool,
-} from "@modelcontextprotocol/sdk/types.js";
+import { McpAnalytics } from 'mcp-analytics-middleware';
 import fetch from "node-fetch";
+import { z } from 'zod';
 
-// Response interfaces
 interface GoogleMapsResponse {
   status: string;
   error_message?: string;
@@ -144,167 +140,6 @@ function getApiKey(): string {
 
 const GOOGLE_MAPS_API_KEY = getApiKey();
 
-// Tool definitions
-const GEOCODE_TOOL: Tool = {
-    name: "maps_geocode",
-    description: "Convert an address into geographic coordinates",
-    inputSchema: {
-      type: "object",
-      properties: {
-        address: {
-          type: "string",
-          description: "The address to geocode"
-        }
-      },
-      required: ["address"]
-    }
-  };
-
-const REVERSE_GEOCODE_TOOL: Tool = {
-  name: "maps_reverse_geocode",
-  description: "Convert coordinates into an address",
-  inputSchema: {
-    type: "object",
-    properties: {
-      latitude: {
-        type: "number",
-        description: "Latitude coordinate"
-      },
-      longitude: {
-        type: "number",
-        description: "Longitude coordinate"
-      }
-    },
-    required: ["latitude", "longitude"]
-  }
-};
-
-const SEARCH_PLACES_TOOL: Tool = {
-  name: "maps_search_places",
-  description: "Search for places using Google Places API",
-  inputSchema: {
-    type: "object",
-    properties: {
-      query: {
-        type: "string",
-        description: "Search query"
-      },
-      location: {
-        type: "object",
-        properties: {
-          latitude: { type: "number" },
-          longitude: { type: "number" }
-        },
-        description: "Optional center point for the search"
-      },
-      radius: {
-        type: "number",
-        description: "Search radius in meters (max 50000)"
-      }
-    },
-    required: ["query"]
-  }
-};
-
-const PLACE_DETAILS_TOOL: Tool = {
-  name: "maps_place_details",
-  description: "Get detailed information about a specific place",
-  inputSchema: {
-    type: "object",
-    properties: {
-      place_id: {
-        type: "string",
-        description: "The place ID to get details for"
-      }
-    },
-    required: ["place_id"]
-  }
-};
-
-const DISTANCE_MATRIX_TOOL: Tool = {
-  name: "maps_distance_matrix",
-  description: "Calculate travel distance and time for multiple origins and destinations",
-  inputSchema: {
-    type: "object",
-    properties: {
-      origins: {
-        type: "array",
-        items: { type: "string" },
-        description: "Array of origin addresses or coordinates"
-      },
-      destinations: {
-        type: "array",
-        items: { type: "string" },
-        description: "Array of destination addresses or coordinates"
-      },
-      mode: {
-        type: "string",
-        description: "Travel mode (driving, walking, bicycling, transit)",
-        enum: ["driving", "walking", "bicycling", "transit"]
-      }
-    },
-    required: ["origins", "destinations"]
-  }
-};
-
-const ELEVATION_TOOL: Tool = {
-  name: "maps_elevation",
-  description: "Get elevation data for locations on the earth",
-  inputSchema: {
-    type: "object",
-    properties: {
-      locations: {
-        type: "array",
-        items: {
-          type: "object",
-          properties: {
-            latitude: { type: "number" },
-            longitude: { type: "number" }
-          },
-          required: ["latitude", "longitude"]
-        },
-        description: "Array of locations to get elevation for"
-      }
-    },
-    required: ["locations"]
-  }
-};
-
-const DIRECTIONS_TOOL: Tool = {
-  name: "maps_directions",
-  description: "Get directions between two points",
-  inputSchema: {
-    type: "object",
-    properties: {
-      origin: {
-        type: "string",
-        description: "Starting point address or coordinates"
-      },
-      destination: {
-        type: "string",
-        description: "Ending point address or coordinates"
-      },
-      mode: {
-        type: "string",
-        description: "Travel mode (driving, walking, bicycling, transit)",
-        enum: ["driving", "walking", "bicycling", "transit"]
-      }
-    },
-    required: ["origin", "destination"]
-  }
-};
-
-const MAPS_TOOLS = [
-  GEOCODE_TOOL,
-  REVERSE_GEOCODE_TOOL,
-  SEARCH_PLACES_TOOL,
-  PLACE_DETAILS_TOOL,
-  DISTANCE_MATRIX_TOOL,
-  ELEVATION_TOOL,
-  DIRECTIONS_TOOL,
-] as const;
-
-// API handlers
 async function handleGeocode(address: string) {
   const url = new URL("https://maps.googleapis.com/maps/api/geocode/json");
   url.searchParams.append("address", address);
@@ -316,23 +151,21 @@ async function handleGeocode(address: string) {
   if (data.status !== "OK") {
     return {
       content: [{
-        type: "text",
+        type: "text" as const,
         text: `Geocoding failed: ${data.error_message || data.status}`
-      }],
-      isError: true
+      }]
     };
   }
 
   return {
     content: [{
-      type: "text",
+      type: "text" as const,
       text: JSON.stringify({
         location: data.results[0].geometry.location,
         formatted_address: data.results[0].formatted_address,
         place_id: data.results[0].place_id
       }, null, 2)
-    }],
-    isError: false
+    }]
   };
 }
 
@@ -347,23 +180,21 @@ async function handleReverseGeocode(latitude: number, longitude: number) {
   if (data.status !== "OK") {
     return {
       content: [{
-        type: "text",
+        type: "text" as const,
         text: `Reverse geocoding failed: ${data.error_message || data.status}`
-      }],
-      isError: true
+      }]
     };
   }
 
   return {
     content: [{
-      type: "text",
+      type: "text" as const,
       text: JSON.stringify({
         formatted_address: data.results[0].formatted_address,
         place_id: data.results[0].place_id,
         address_components: data.results[0].address_components
       }, null, 2)
-    }],
-    isError: false
+    }]
   };
 }
 
@@ -389,16 +220,15 @@ async function handlePlaceSearch(
   if (data.status !== "OK") {
     return {
       content: [{
-        type: "text",
+        type: "text" as const,
         text: `Place search failed: ${data.error_message || data.status}`
-      }],
-      isError: true
+      }]
     };
   }
 
   return {
     content: [{
-      type: "text",
+      type: "text" as const,
       text: JSON.stringify({
         places: data.results.map((place) => ({
           name: place.name,
@@ -409,8 +239,7 @@ async function handlePlaceSearch(
           types: place.types
         }))
       }, null, 2)
-    }],
-    isError: false
+    }]
   };
 }
 
@@ -425,16 +254,15 @@ async function handlePlaceDetails(place_id: string) {
   if (data.status !== "OK") {
     return {
       content: [{
-        type: "text",
+        type: "text" as const,
         text: `Place details request failed: ${data.error_message || data.status}`
-      }],
-      isError: true
+      }]
     };
   }
 
   return {
     content: [{
-      type: "text",
+      type: "text" as const,
       text: JSON.stringify({
         name: data.result.name,
         formatted_address: data.result.formatted_address,
@@ -445,19 +273,21 @@ async function handlePlaceDetails(place_id: string) {
         reviews: data.result.reviews,
         opening_hours: data.result.opening_hours
       }, null, 2)
-    }],
-    isError: false
+    }]
   };
 }
+
 async function handleDistanceMatrix(
   origins: string[],
   destinations: string[],
-  mode: "driving" | "walking" | "bicycling" | "transit" = "driving"
+  mode?: "driving" | "walking" | "bicycling" | "transit"
 ) {
   const url = new URL("https://maps.googleapis.com/maps/api/distancematrix/json");
   url.searchParams.append("origins", origins.join("|"));
   url.searchParams.append("destinations", destinations.join("|"));
-  url.searchParams.append("mode", mode);
+  if (mode) {
+    url.searchParams.append("mode", mode);
+  }
   url.searchParams.append("key", GOOGLE_MAPS_API_KEY);
 
   const response = await fetch(url.toString());
@@ -466,16 +296,15 @@ async function handleDistanceMatrix(
   if (data.status !== "OK") {
     return {
       content: [{
-        type: "text",
+        type: "text" as const,
         text: `Distance matrix request failed: ${data.error_message || data.status}`
-      }],
-      isError: true
+      }]
     };
   }
 
   return {
     content: [{
-      type: "text",
+      type: "text" as const,
       text: JSON.stringify({
         origin_addresses: data.origin_addresses,
         destination_addresses: data.destination_addresses,
@@ -487,8 +316,7 @@ async function handleDistanceMatrix(
           }))
         }))
       }, null, 2)
-    }],
-    isError: false
+    }]
   };
 }
 
@@ -506,16 +334,15 @@ async function handleElevation(locations: Array<{ latitude: number; longitude: n
   if (data.status !== "OK") {
     return {
       content: [{
-        type: "text",
+        type: "text" as const,
         text: `Elevation request failed: ${data.error_message || data.status}`
-      }],
-      isError: true
+      }]
     };
   }
 
   return {
     content: [{
-      type: "text",
+      type: "text" as const,
       text: JSON.stringify({
         results: data.results.map((result) => ({
           elevation: result.elevation,
@@ -523,20 +350,21 @@ async function handleElevation(locations: Array<{ latitude: number; longitude: n
           resolution: result.resolution
         }))
       }, null, 2)
-    }],
-    isError: false
+    }]
   };
 }
 
 async function handleDirections(
   origin: string,
   destination: string,
-  mode: "driving" | "walking" | "bicycling" | "transit" = "driving"
+  mode?: "driving" | "walking" | "bicycling" | "transit"
 ) {
   const url = new URL("https://maps.googleapis.com/maps/api/directions/json");
   url.searchParams.append("origin", origin);
   url.searchParams.append("destination", destination);
-  url.searchParams.append("mode", mode);
+  if (mode) {
+    url.searchParams.append("mode", mode);
+  }
   url.searchParams.append("key", GOOGLE_MAPS_API_KEY);
 
   const response = await fetch(url.toString());
@@ -545,16 +373,15 @@ async function handleDirections(
   if (data.status !== "OK") {
     return {
       content: [{
-        type: "text",
+        type: "text" as const,
         text: `Directions request failed: ${data.error_message || data.status}`
-      }],
-      isError: true
+      }]
     };
   }
 
   return {
     content: [{
-      type: "text",
+      type: "text" as const,
       text: JSON.stringify({
         routes: data.routes.map((route) => ({
           summary: route.summary,
@@ -568,111 +395,147 @@ async function handleDirections(
           }))
         }))
       }, null, 2)
-    }],
-    isError: false
+    }]
   };
 }
 
 // Server setup
-const server = new Server(
-  {
-    name: "mcp-server/google-maps",
-    version: "0.1.0",
-  },
-  {
-    capabilities: {
-      tools: {},
-    },
-  },
-);
-
-// Set up request handlers
-server.setRequestHandler(ListToolsRequestSchema, async () => ({
-  tools: MAPS_TOOLS,
-}));
-
-server.setRequestHandler(CallToolRequestSchema, async (request) => {
-  try {
-    switch (request.params.name) {
-      case "maps_geocode": {
-        const { address } = request.params.arguments as { address: string };
-        return await handleGeocode(address);
-      }
-
-      case "maps_reverse_geocode": {
-        const { latitude, longitude } = request.params.arguments as {
-          latitude: number;
-          longitude: number;
-        };
-        return await handleReverseGeocode(latitude, longitude);
-      }
-
-      case "maps_search_places": {
-        const { query, location, radius } = request.params.arguments as {
-          query: string;
-          location?: { latitude: number; longitude: number };
-          radius?: number;
-        };
-        return await handlePlaceSearch(query, location, radius);
-      }
-
-      case "maps_place_details": {
-        const { place_id } = request.params.arguments as { place_id: string };
-        return await handlePlaceDetails(place_id);
-      }
-
-      case "maps_distance_matrix": {
-        const { origins, destinations, mode } = request.params.arguments as {
-          origins: string[];
-          destinations: string[];
-          mode?: "driving" | "walking" | "bicycling" | "transit";
-        };
-        return await handleDistanceMatrix(origins, destinations, mode);
-      }
-
-      case "maps_elevation": {
-        const { locations } = request.params.arguments as {
-          locations: Array<{ latitude: number; longitude: number }>;
-        };
-        return await handleElevation(locations);
-      }
-
-      case "maps_directions": {
-        const { origin, destination, mode } = request.params.arguments as {
-          origin: string;
-          destination: string;
-          mode?: "driving" | "walking" | "bicycling" | "transit";
-        };
-        return await handleDirections(origin, destination, mode);
-      }
-
-      default:
-        return {
-          content: [{
-            type: "text",
-            text: `Unknown tool: ${request.params.name}`
-          }],
-          isError: true
-        };
-    }
-  } catch (error) {
-    return {
-      content: [{
-        type: "text",
-        text: `Error: ${error instanceof Error ? error.message : String(error)}`
-      }],
-      isError: true
-    };
-  }
+let server = new McpServer({
+  name: "mcp-server/google-maps",
+  version: "1.0.0"
 });
 
-async function runServer() {
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
-  console.error("Google Maps MCP Server running on stdio");
+const enableAnalytics = process.argv.includes('--analytics');
+
+let dbPath: string | undefined = undefined;
+for (let i = 0; i < process.argv.length; i++) {
+  const arg = process.argv[i];
+  
+  if (arg.startsWith('--db-path=')) {
+    dbPath = arg.substring('--db-path='.length);
+    break;
+  }
+  
+  if (arg === '--db-path' && i < process.argv.length - 1) {
+    dbPath = process.argv[i + 1];
+    break;
+  }
 }
 
-runServer().catch((error) => {
-  console.error("Fatal error running server:", error);
-  process.exit(1);
-});
+if (enableAnalytics) {
+  let analytics = new McpAnalytics(dbPath);
+  console.error("Analytics enabled");
+  server = analytics.enhance(server);
+} 
+
+// Tool registrations
+server.tool(
+  'maps_geocode',
+  'Geocode an address to get its coordinates',
+  {
+    address: z.string().describe('The address to geocode')
+  },
+  async ({ address }) => handleGeocode(address)
+);
+
+server.tool(
+  'maps_reverse_geocode',
+  'Reverse geocode coordinates to get an address',
+  {
+    latitude: z.number().describe('Latitude coordinate'),
+    longitude: z.number().describe('Longitude coordinate')
+  },
+  async ({ latitude, longitude }) => handleReverseGeocode(latitude, longitude)
+);
+
+server.tool(
+  'maps_search_places',
+  'Search for places using text query',
+  {
+    query: z.string().describe('Search query'),
+    latitude: z.number().optional().describe('Optional latitude for search center'),
+    longitude: z.number().optional().describe('Optional longitude for search center'),
+    radius: z.number().optional().describe('Search radius in meters (max 50000)')
+  },
+  async ({ query, latitude, longitude, radius }) => {
+    const location = latitude && longitude ? { latitude, longitude } : undefined;
+    return handlePlaceSearch(query, location, radius);
+  }
+);
+
+server.tool(
+  'maps_place_details',
+  'Get detailed information about a place',
+  {
+    place_id: z.string().describe('The place ID to get details for')
+  },
+  async ({ place_id }) => handlePlaceDetails(place_id)
+);
+
+server.tool(
+  'maps_distance_matrix',
+  'Calculate distances between multiple origins and destinations',
+  {
+    origins: z.array(z.string()).describe('Array of origin addresses or coordinates'),
+    destinations: z.array(z.string()).describe('Array of destination addresses or coordinates'),
+    mode: z.enum(['driving', 'walking', 'bicycling', 'transit']).optional()
+      .describe('Travel mode (driving, walking, bicycling, transit)')
+  },
+  async ({ origins, destinations, mode }) => handleDistanceMatrix(origins, destinations, mode)
+);
+
+server.tool(
+  'maps_elevation',
+  'Get elevation data for locations',
+  {
+    locations: z.array(
+      z.object({
+        latitude: z.number(),
+        longitude: z.number()
+      })
+    ).describe('Array of locations to get elevation for')
+  },
+  async ({ locations }) => handleElevation(locations)
+);
+
+server.tool(
+  'maps_directions',
+  'Get directions between two points',
+  {
+    origin: z.string().describe('Starting point address or coordinates'),
+    destination: z.string().describe('Ending point address or coordinates'),
+    mode: z.enum(['driving', 'walking', 'bicycling', 'transit']).optional()
+      .describe('Travel mode (driving, walking, bicycling, transit)')
+  },
+  async ({ origin, destination, mode }) => handleDirections(origin, destination, mode)
+);
+
+server.resource(
+  "maps_info",
+  "text://maps_info",
+  async (uri, extra) => {
+    return {
+      contents: [{
+        uri: uri.href,
+        text: `Google Maps API Information - Integrates with Google Maps services like geocoding, places search, and directions.`
+      }]
+    };
+  }
+);
+
+server.resource(
+  "test_info",
+  "text://test_info",
+  async (uri, extra) => {
+    return {
+      contents: [{
+        uri: uri.href,
+        text: `Test`
+      }]
+    };
+  }
+);
+
+const transport = new StdioServerTransport();
+await server.connect(transport);
+console.error("Google Maps MCP Server running on stdio");
