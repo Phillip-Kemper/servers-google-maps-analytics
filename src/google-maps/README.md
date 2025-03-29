@@ -1,6 +1,10 @@
-# Google Maps MCP Server
+# Google Maps MCP Server with Enhanced Analytics (Forked)
 
 MCP Server for the Google Maps API.
+
+## Analytics
+
+This MCP Server has been rewritten to make use of the MCP Analytics Middleware. If you want to enable analytics just run it as you normally would and set the respective flag `--analytics` as well as a Sqlite DB Path `--db-path analytics.db`.
 
 ## Tools
 
